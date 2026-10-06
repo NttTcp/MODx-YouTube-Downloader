@@ -1,350 +1,111 @@
-
-import os
-import re
-import uuid
-import time
-import tempfile
-
-from urllib.parse import urlparse, parse_qs
-
-from flask import Flask, request, jsonify, send_file
-
+from flask import Flask, request, jsonify, Response
 import yt_dlp
-
+import re
+import requests
 
 app = Flask(__name__)
 
-TEMP_DIR = os.path.join(
-    tempfile.gettempdir(),
-    "ytmp3x"
-)
-
-os.makedirs(TEMP_DIR, exist_ok=True)
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
 
-def valid_youtube(url):
+def clean_url(url):
+    if not url:
+        return None
+    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})", url)
+    return f"https://www.youtube.com/watch?v={m.group(1)}" if m else None
 
+
+@app.route("/info")
+def info():
+    url = clean_url(request.args.get("url"))
+    if not url:
+        return jsonify(error="Invalid YouTube URL"), 400
+
+    opts = {"quiet": True, "skip_download": True, "noplaylist": True}
     try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            data = ydl.extract_info(url, download=False)
 
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
+        formats = []
+        seen = set()
+        for f in data.get("formats", []):
+            if f.get("vcodec") == "none":
+                continue
+            if f.get("acodec") == "none":
+                continue
+            q = f.get("format_note") or f.get("resolution") or "?"
+            if q in seen:
+                continue
+            seen.add(q)
+            formats.append({
+                "format_id": f["format_id"],
+                "quality": q,
+                "ext": f.get("ext", "mp4"),
+                "size": f.get("filesize") or f.get("filesize_approx"),
+            })
 
-        p = urlparse(url)
+        formats.sort(key=lambda x: int(re.sub(r"\D", "", x["quality"]) or 0))
 
-        host = p.netloc.lower().split(":")[0]
-        path = p.path.strip("/")
-
-        if host in ("youtu.be", "www.youtu.be"):
-            return bool(path)
-
-        if host not in (
-            "youtube.com",
-            "www.youtube.com",
-            "m.youtube.com",
-            "music.youtube.com"
-        ):
-            return False
-
-        if path == "watch":
-
-            return bool(
-                parse_qs(p.query)
-                .get("v", [""])[0]
-            )
-
-        for prefix in (
-            "shorts/",
-            "embed/",
-            "live/"
-        ):
-
-            if path.startswith(prefix):
-
-                video_id = (
-                    path[len(prefix):]
-                    .split("/")[0]
-                )
-
-                return bool(video_id)
-
-        return False
-
-    except Exception:
-
-        return False
-
-
-def error(message, code=400):
-
-    return jsonify({
-        "ok": False,
-        "error": message
-    }), code
-
-
-def ydl_options():
-
-    return {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "socket_timeout": 30,
-        "retries": 2,
-
-        "extractor_args": {
-            "youtube": {
-                "player_client": [
-                    "android",
-                    "web"
-                ]
-            }
-        }
-    }
-
-
-def find_file(uid, ext):
-
-    prefix = uid + "."
-
-    for filename in os.listdir(TEMP_DIR):
-
-        if (
-            filename.startswith(prefix)
-            and filename.endswith("." + ext)
-        ):
-            return os.path.join(
-                TEMP_DIR,
-                filename
-            )
-
-    return None
-
-
-# ------------------------------------------------
-# HEALTH
-# ------------------------------------------------
-
-@app.route("/api/health")
-def health():
-
-    return jsonify({
-        "ok": True,
-        "service": "YTMP3 X",
-        "status": "online"
-    })
-
-
-# ------------------------------------------------
-# MP3
-# ------------------------------------------------
-
-@app.route("/api/mp3")
-def mp3():
-
-    url = request.args.get(
-        "url",
-        ""
-    ).strip()
-
-    quality = request.args.get(
-        "quality",
-        "192"
-    )
-
-    if not valid_youtube(url):
-
-        return error(
-            "Invalid YouTube URL.",
-            400
-        )
-
-    if quality not in (
-        "128",
-        "192",
-        "256",
-        "320"
-    ):
-
-        quality = "192"
-
-    uid = uuid.uuid4().hex
-
-    output = os.path.join(
-        TEMP_DIR,
-        uid + ".%(ext)s"
-    )
-
-    options = ydl_options()
-
-    options.update({
-
-        "format":
-            "bestaudio/best",
-
-        "outtmpl":
-            output,
-
-        "postprocessors": [
-
-            {
-                "key":
-                    "FFmpegExtractAudio",
-
-                "preferredcodec":
-                    "mp3",
-
-                "preferredquality":
-                    quality
-            }
-
-        ],
-
-        "prefer_ffmpeg":
-            True
-    })
-
-    try:
-
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
-
-        path = find_file(
-            uid,
-            "mp3"
-        )
-
-        if not path:
-
-            return error(
-                "MP3 conversion failed. FFmpeg is probably unavailable.",
-                500
-            )
-
-        return send_file(
-            path,
-            mimetype="audio/mpeg",
-            as_attachment=True,
-            download_name="audio.mp3"
-        )
-
+        return jsonify({
+            "title": data.get("title"),
+            "thumbnail": data.get("thumbnail"),
+            "duration": data.get("duration") or 0,
+            "author": data.get("uploader", ""),
+            "formats": formats,
+        })
     except Exception as e:
-
-        return error(
-            str(e)[:500],
-            500
-        )
+        return jsonify(error=str(e)), 500
 
 
-# ------------------------------------------------
-# MP4
-# ------------------------------------------------
+@app.route("/download")
+def download():
+    url = clean_url(request.args.get("url"))
+    if not url:
+        return jsonify(error="Invalid URL"), 400
 
-@app.route("/api/mp4")
-def mp4():
+    kind = request.args.get("type", "video")
+    fmt_id = request.args.get("format_id")
 
-    url = request.args.get(
-        "url",
-        ""
-    ).strip()
-
-    quality = request.args.get(
-        "quality",
-        "best"
-    )
-
-    if not valid_youtube(url):
-
-        return error(
-            "Invalid YouTube URL.",
-            400
-        )
-
-    if quality in (
-        "2160",
-        "1440",
-        "1080",
-        "720",
-        "480",
-        "360"
-    ):
-
-        fmt = (
-            f"bestvideo[height<={quality}]"
-            "[ext=mp4]+"
-            "bestaudio[ext=m4a]/"
-            f"best[height<={quality}]/best"
-        )
-
+    if kind == "audio":
+        fmt = "bestaudio[ext=m4a]/bestaudio/best"
     else:
+        fmt = fmt_id or "best[ext=mp4]/best"
 
-        fmt = (
-            "bestvideo[ext=mp4]+"
-            "bestaudio[ext=m4a]/best"
-        )
-
-    uid = uuid.uuid4().hex
-
-    output = os.path.join(
-        TEMP_DIR,
-        uid + ".%(ext)s"
-    )
-
-    options = ydl_options()
-
-    options.update({
-
-        "format":
-            fmt,
-
-        "outtmpl":
-            output,
-
-        "merge_output_format":
-            "mp4",
-
-        "prefer_ffmpeg":
-            True
-    })
+    opts = {"quiet": True, "noplaylist": True, "format": fmt}
 
     try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            data = ydl.extract_info(url, download=False)
 
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
+        direct = data["url"]
+        ext = data.get("ext", "mp4")
 
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
+        headers = {
+            "User-Agent": UA,
+            "Referer": "https://www.youtube.com/",
+            "Range": request.headers.get("Range", ""),
+        }
+        r = requests.get(direct, headers=headers, stream=True, timeout=60)
 
-        path = find_file(
-            uid,
-            "mp4"
+        def generate():
+            for chunk in r.iter_content(chunk_size=64 * 1024):
+                if chunk:
+                    yield chunk
+
+        mime = "audio/mp4" if kind == "audio" else f"video/{ext}"
+        filename = f"{kind}-{data.get('id', 'file')}.{ext}"
+
+        return Response(
+            generate(),
+            mimetype=mime,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
         )
-
-        if not path:
-
-            return error(
-                "MP4 conversion failed. FFmpeg is probably unavailable.",
-                500
-            )
-
-        return send_file(
-            path,
-            mimetype="video/mp4",
-            as_attachment=True,
-            download_name="video.mp4"
-        )
-
     except Exception as e:
+        return jsonify(error=str(e)), 500
 
-        return error(
-            str(e)[:500],
-            500
-        )
+
+# Vercel needs this
+handler = app
