@@ -1,208 +1,117 @@
-"""
-YTMP3 Pro — Flask + yt-dlp backend
-Vercel compatible
-"""
-
 import os
 import re
 import uuid
-import time
 import tempfile
-import threading
+import time
+
 from urllib.parse import urlparse, parse_qs
 
 from flask import Flask, request, jsonify, send_file, send_from_directory
+
 import yt_dlp
 
 
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+TEMP_DIR = os.path.join(
+    tempfile.gettempdir(),
+    "ytmp3x"
+)
+
+os.makedirs(
+    TEMP_DIR,
+    exist_ok=True
+)
+
+
+app = Flask(
+    __name__,
+    static_folder=None
+)
+
+
 # ============================================================
-# CONFIG
+# YOUTUBE URL CHECK
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMP_DIR = os.path.join(tempfile.gettempdir(), "ytmp3pro")
-
-FILE_TTL = 600
-MAX_DURATION = 60 * 60
-
-# If FFmpeg is installed and available in PATH, keep None.
-FFMPEG_BIN = os.environ.get("FFMPEG_BIN") or None
-
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-app = Flask(__name__, static_folder=None)
-
-
-# ============================================================
-# YOUTUBE URL VALIDATION
-# ============================================================
-
-def is_valid_youtube(url: str) -> bool:
-    if not url or not isinstance(url, str):
-        return False
-
-    url = url.strip()
-
-    if not url:
-        return False
-
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
+def valid(url):
 
     try:
-        parsed = urlparse(url)
 
-        host = parsed.netloc.lower().split(":")[0]
-        path = parsed.path.strip("/")
+        if not url.startswith(
+            ("http://", "https://")
+        ):
+            url = "https://" + url
 
-        valid_hosts = {
+        p = urlparse(url)
+
+        host = p.netloc.lower().split(":")[0]
+
+        path = p.path.strip("/")
+
+        # youtu.be
+        if host in (
+            "youtu.be",
+            "www.youtu.be"
+        ):
+
+            return bool(path)
+
+        # youtube.com
+        if host in (
             "youtube.com",
             "www.youtube.com",
             "m.youtube.com",
-            "music.youtube.com",
-            "youtu.be",
-            "www.youtu.be"
-        }
+            "music.youtube.com"
+        ):
 
-        if host not in valid_hosts:
-            return False
+            if path == "watch":
 
-        # youtu.be/VIDEO_ID
-        if host in ("youtu.be", "www.youtu.be"):
-            return bool(path)
+                return bool(
+                    parse_qs(
+                        p.query
+                    ).get(
+                        "v",
+                        [""]
+                    )[0]
+                )
 
-        # youtube.com/watch?v=VIDEO_ID
-        if path == "watch":
-            video_id = parse_qs(parsed.query).get("v", [""])[0]
-            return bool(video_id)
-
-        # youtube.com/shorts/VIDEO_ID
-        if path.startswith("shorts/"):
-            video_id = path.split("/", 1)[1].split("/")[0]
-            return bool(video_id)
-
-        # youtube.com/embed/VIDEO_ID
-        if path.startswith("embed/"):
-            video_id = path.split("/", 1)[1].split("/")[0]
-            return bool(video_id)
-
-        # youtube.com/live/VIDEO_ID
-        if path.startswith("live/"):
-            video_id = path.split("/", 1)[1].split("/")[0]
-            return bool(video_id)
-
-        return False
-
-    except Exception:
-        return False
-
-
-# ============================================================
-# CLEANUP
-# ============================================================
-
-def cleanup_worker():
-    while True:
-        try:
-            now = time.time()
-
-            for name in os.listdir(TEMP_DIR):
-                path = os.path.join(TEMP_DIR, name)
-
-                if not os.path.isfile(path):
-                    continue
-
-                age = now - os.path.getmtime(path)
-
-                if age > FILE_TTL:
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-
-        except Exception:
-            pass
-
-        time.sleep(120)
-
-
-threading.Thread(
-    target=cleanup_worker,
-    daemon=True
-).start()
-
-
-# ============================================================
-# YT-DLP OPTIONS
-# ============================================================
-
-def ydl_base_opts():
-
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-
-        "socket_timeout": 30,
-        "retries": 3,
-
-        "extractor_args": {
-            "youtube": {
-                "player_client": [
-                    "android",
-                    "web"
-                ]
-            }
-        }
-    }
-
-    if FFMPEG_BIN:
-        opts["ffmpeg_location"] = FFMPEG_BIN
-
-    return opts
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def safe_filename(name, fallback="download"):
-
-    name = re.sub(
-        r'[\\/:*?"<>|\r\n\t]+',
-        "_",
-        name or ""
-    )
-
-    name = name.strip("._ ")
-
-    return name[:120] or fallback
-
-
-def find_output(uid, ext):
-
-    prefix = uid.lower()
-    extension = "." + ext.lower()
-
-    try:
-        for name in os.listdir(TEMP_DIR):
-
-            if (
-                name.lower().startswith(prefix)
-                and name.lower().endswith(extension)
+            for prefix in (
+                "shorts/",
+                "embed/",
+                "live/"
             ):
-                return os.path.join(TEMP_DIR, name)
+
+                if path.startswith(prefix):
+
+                    parts = path.split(
+                        "/",
+                        1
+                    )
+
+                    if len(parts) > 1:
+
+                        video_id = (
+                            parts[1]
+                            .split("/")[0]
+                        )
+
+                        return bool(video_id)
+
+        return False
 
     except Exception:
-        pass
 
-    return None
+        return False
 
 
-def error_json(message, code=400):
+# ============================================================
+# ERROR
+# ============================================================
+
+def err(message, code=400):
 
     return jsonify({
         "ok": False,
@@ -211,18 +120,83 @@ def error_json(message, code=400):
 
 
 # ============================================================
+# YT-DLP
+# ============================================================
+
+def opts():
+
+    return {
+
+        "quiet": True,
+
+        "no_warnings": True,
+
+        "noplaylist": True,
+
+        "socket_timeout": 30,
+
+        "retries": 2,
+
+        "extractor_args": {
+
+            "youtube": {
+
+                "player_client": [
+                    "android",
+                    "web"
+                ]
+
+            }
+
+        }
+
+    }
+
+
+# ============================================================
+# FIND FILE
+# ============================================================
+
+def find(uid, ext):
+
+    try:
+
+        for name in os.listdir(
+            TEMP_DIR
+        ):
+
+            if (
+                name.startswith(uid)
+                and name.endswith(
+                    "." + ext
+                )
+            ):
+
+                return os.path.join(
+                    TEMP_DIR,
+                    name
+                )
+
+    except Exception:
+
+        pass
+
+    return None
+
+
+# ============================================================
 # HOME
 # ============================================================
 
-@app.route("/", methods=["GET"])
-def index():
+@app.get("/")
+def home():
 
-    index_file = os.path.join(
+    path = os.path.join(
         BASE_DIR,
         "index.html"
     )
 
-    if os.path.exists(index_file):
+    if os.path.exists(path):
 
         return send_from_directory(
             BASE_DIR,
@@ -231,8 +205,7 @@ def index():
 
     return jsonify({
         "ok": True,
-        "service": "YTMP3 Pro",
-        "message": "API is running"
+        "service": "YTMP3 X"
     })
 
 
@@ -240,431 +213,277 @@ def index():
 # HEALTH
 # ============================================================
 
-@app.route("/api/health", methods=["GET"])
+@app.get("/api/health")
 def health():
 
     return jsonify({
+
         "ok": True,
-        "service": "ytmp3pro",
-        "time": int(time.time())
+
+        "service": "ytmp3x",
+
+        "time": int(
+            time.time()
+        )
+
     })
 
 
 # ============================================================
-# INFO
+# CONVERT
 # ============================================================
 
-@app.route("/api/info", methods=["GET"])
-def api_info():
+@app.get("/api/<kind>")
+def convert(kind):
+
+    if kind not in (
+        "mp3",
+        "mp4"
+    ):
+
+        return err(
+            "Unknown endpoint",
+            404
+        )
+
 
     url = request.args.get(
         "url",
         ""
     ).strip()
 
-    if not is_valid_youtube(url):
 
-        return error_json(
-            "Invalid YouTube URL.",
-            400
+    quality = request.args.get(
+        "quality",
+        "192"
+        if kind == "mp3"
+        else "best"
+    ).lower()
+
+
+    if not valid(url):
+
+        return err(
+            "Invalid YouTube URL."
         )
+
+
+    uid = uuid.uuid4().hex
+
+
+    output = os.path.join(
+        TEMP_DIR,
+        uid + ".%(ext)s"
+    )
+
+
+    options = opts()
+
+
+    # --------------------------------------------------------
+    # MP3
+    # --------------------------------------------------------
+
+    if kind == "mp3":
+
+        if quality not in (
+            "128",
+            "192",
+            "256",
+            "320"
+        ):
+
+            quality = "192"
+
+
+        options.update({
+
+            "format":
+                "bestaudio/best",
+
+            "outtmpl":
+                output,
+
+            "postprocessors": [
+
+                {
+
+                    "key":
+                        "FFmpegExtractAudio",
+
+                    "preferredcodec":
+                        "mp3",
+
+                    "preferredquality":
+                        quality
+
+                }
+
+            ],
+
+            "prefer_ffmpeg":
+                True
+
+        })
+
+
+    # --------------------------------------------------------
+    # MP4
+    # --------------------------------------------------------
+
+    else:
+
+        height = None
+
+
+        if quality in (
+            "2160",
+            "1440",
+            "1080",
+            "720",
+            "480",
+            "360"
+        ):
+
+            height = quality
+
+
+        if height:
+
+            fmt = (
+
+                f"bestvideo"
+                f"[height<={height}]"
+                f"[ext=mp4]+"
+                f"bestaudio[ext=m4a]/"
+
+                f"best[height<={height}]"
+
+            )
+
+        else:
+
+            fmt = (
+
+                "bestvideo[ext=mp4]+"
+                "bestaudio[ext=m4a]/"
+                "best"
+
+            )
+
+
+        options.update({
+
+            "format":
+                fmt,
+
+            "outtmpl":
+                output,
+
+            "merge_output_format":
+                "mp4",
+
+            "prefer_ffmpeg":
+                True
+
+        })
+
+
+    # --------------------------------------------------------
+    # DOWNLOAD
+    # --------------------------------------------------------
 
     try:
 
         with yt_dlp.YoutubeDL(
-            ydl_base_opts()
+            options
         ) as ydl:
 
             info = ydl.extract_info(
                 url,
-                download=False
+                download=True
             )
 
-        duration = info.get(
-            "duration"
-        ) or 0
 
-        if duration > MAX_DURATION:
+        path = find(
+            uid,
+            kind
+        )
 
-            return error_json(
-                "Video is longer than 1 hour.",
-                400
+
+        if not path:
+
+            return err(
+
+                "Conversion failed. "
+                "FFmpeg may be unavailable "
+                "on the server.",
+
+                500
+
             )
 
-        heights = set()
-
-        for fmt in info.get("formats") or []:
-
-            if (
-                fmt.get("vcodec")
-                and fmt.get("vcodec") != "none"
-                and fmt.get("height")
-            ):
-
-                try:
-                    heights.add(
-                        int(fmt["height"])
-                    )
-                except Exception:
-                    pass
 
         return jsonify({
 
             "ok": True,
 
-            "data": {
-
-                "id": info.get("id"),
-
-                "title": info.get("title"),
-
-                "thumbnail": info.get(
-                    "thumbnail"
+            "title":
+                info.get(
+                    "title",
+                    "download"
                 ),
 
-                "duration": duration,
+            "download_url":
+                "/api/download/"
+                + os.path.basename(path)
 
-                "duration_string":
-                    info.get("duration_string")
-                    or time.strftime(
-                        "%H:%M:%S",
-                        time.gmtime(duration)
-                    ),
-
-                "uploader":
-                    info.get("uploader"),
-
-                "view_count":
-                    info.get("view_count"),
-
-                "resolutions":
-                    sorted(
-                        heights,
-                        reverse=True
-                    )
-            }
         })
 
-    except yt_dlp.utils.DownloadError as e:
-
-        return error_json(
-            "YouTube error: "
-            + str(e)[:300],
-            400
-        )
 
     except Exception as e:
 
-        return error_json(
-            "Server error: "
-            + str(e)[:300],
+        return err(
+            str(e)[:400],
             500
         )
 
 
 # ============================================================
-# MP3
+# FILE DOWNLOAD
 # ============================================================
 
-@app.route("/api/mp3", methods=["GET"])
-def api_mp3():
+@app.get("/api/download/<name>")
+def download(name):
 
-    url = request.args.get(
-        "url",
-        ""
-    ).strip()
-
-    quality = request.args.get(
-        "quality",
-        "192"
-    ).strip()
-
-    if not is_valid_youtube(url):
-
-        return error_json(
-            "Invalid YouTube URL.",
-            400
-        )
-
-    if quality not in (
-        "128",
-        "192",
-        "256",
-        "320"
+    if not re.fullmatch(
+        r"[a-f0-9]{32}\.(mp3|mp4)",
+        name,
+        re.I
     ):
 
-        quality = "192"
+        return err(
+            "Not found",
+            404
+        )
 
-    uid = uuid.uuid4().hex
 
-    output = os.path.join(
+    path = os.path.join(
         TEMP_DIR,
-        f"{uid}.%(ext)s"
+        name
     )
 
-    opts = ydl_base_opts()
 
-    opts.update({
+    if not os.path.isfile(path):
 
-        "format":
-            "bestaudio/best",
-
-        "outtmpl":
-            output,
-
-        "postprocessors": [
-
-            {
-                "key":
-                    "FFmpegExtractAudio",
-
-                "preferredcodec":
-                    "mp3",
-
-                "preferredquality":
-                    quality
-            }
-
-        ],
-
-        "postprocessor_args":
-            ["-ar", "44100"],
-
-        "prefer_ffmpeg":
-            True
-    })
-
-    try:
-
-        with yt_dlp.YoutubeDL(
-            opts
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
-
-        path = find_output(
-            uid,
-            "mp3"
-        )
-
-        if not path:
-
-            return error_json(
-                "MP3 conversion failed. FFmpeg may be unavailable.",
-                500
-            )
-
-        title = safe_filename(
-            info.get(
-                "title",
-                "audio"
-            )
-        )
-
-        return send_file(
-
-            path,
-
-            mimetype="audio/mpeg",
-
-            as_attachment=True,
-
-            download_name=
-                f"{title}.mp3",
-
-            conditional=True
-        )
-
-    except yt_dlp.utils.DownloadError as e:
-
-        return error_json(
-            "YouTube error: "
-            + str(e)[:300],
-            400
-        )
-
-    except Exception as e:
-
-        return error_json(
-            "Server error: "
-            + str(e)[:300],
-            500
+        return err(
+            "File expired or not found",
+            404
         )
 
 
-# ============================================================
-# MP4
-# ============================================================
-
-@app.route("/api/mp4", methods=["GET"])
-def api_mp4():
-
-    url = request.args.get(
-        "url",
-        ""
-    ).strip()
-
-    quality = request.args.get(
-        "quality",
-        "best"
-    ).strip().lower()
-
-    if not is_valid_youtube(url):
-
-        return error_json(
-            "Invalid YouTube URL.",
-            400
-        )
-
-    # ----------------------------
-    # QUALITY
-    # ----------------------------
-
-    if quality in (
-        "",
-        "best"
-    ):
-
-        fmt = (
-            "bestvideo[ext=mp4]+"
-            "bestaudio[ext=m4a]/"
-            "bestvideo+bestaudio/"
-            "best"
-        )
-
-    elif quality in (
-        "2160",
-        "1440",
-        "1080",
-        "720",
-        "480",
-        "360"
-    ):
-
-        fmt = (
-
-            f"bestvideo[height<={quality}]"
-            "[ext=mp4]+"
-            "bestaudio[ext=m4a]/"
-
-            f"bestvideo[height<={quality}]"
-            "+bestaudio/"
-
-            f"best[height<={quality}]/best"
-        )
-
-    else:
-
-        fmt = (
-            "bestvideo[ext=mp4]+"
-            "bestaudio[ext=m4a]/"
-            "best"
-        )
-
-    uid = uuid.uuid4().hex
-
-    output = os.path.join(
-        TEMP_DIR,
-        f"{uid}.%(ext)s"
-    )
-
-    opts = ydl_base_opts()
-
-    opts.update({
-
-        "format":
-            fmt,
-
-        "outtmpl":
-            output,
-
-        "merge_output_format":
-            "mp4",
-
-        "prefer_ffmpeg":
-            True
-    })
-
-    try:
-
-        with yt_dlp.YoutubeDL(
-            opts
-        ) as ydl:
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
-
-        path = find_output(
-            uid,
-            "mp4"
-        )
-
-        if not path:
-
-            return error_json(
-                "MP4 conversion failed. FFmpeg may be unavailable.",
-                500
-            )
-
-        title = safe_filename(
-            info.get(
-                "title",
-                "video"
-            )
-        )
-
-        return send_file(
-
-            path,
-
-            mimetype="video/mp4",
-
-            as_attachment=True,
-
-            download_name=
-                f"{title}.mp4",
-
-            conditional=True
-        )
-
-    except yt_dlp.utils.DownloadError as e:
-
-        return error_json(
-            "YouTube error: "
-            + str(e)[:300],
-            400
-        )
-
-    except Exception as e:
-
-        return error_json(
-            "Server error: "
-            + str(e)[:300],
-            500
-        )
-
-
-# ============================================================
-# RUN
-# ============================================================
-
-if __name__ == "__main__":
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            5000
-        )
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        threaded=True
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=name
     )
