@@ -1,641 +1,131 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>YTMP3 X — YouTube Converter</title>
-
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YT Downloader</title>
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
-:root{
-  --bg:#070912;
-  --panel:#101425;
-  --line:#242b45;
-  --text:#f5f7ff;
-  --muted:#9299b5;
-  --a:#7357ff;
-  --b:#2c9cff;
-  --danger:#ff5f7a;
-}
-
-*{box-sizing:border-box}
-
-body{
-  margin:0;
-  background:
-    radial-gradient(circle at 50% -10%,#18255a 0,#0b1022 34%,#070912 72%);
-  color:var(--text);
-  font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;
-  min-height:100vh
-}
-
-.wrap{
-  max-width:1050px;
-  margin:auto;
-  padding:24px 18px 60px
-}
-
-.nav{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  margin-bottom:42px
-}
-
-.brand{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  font-weight:900;
-  font-size:23px
-}
-
-.logo{
-  width:44px;
-  height:44px;
-  border-radius:14px;
-  display:grid;
-  place-items:center;
-  background:linear-gradient(135deg,#27a9ff,#7157ff);
-  box-shadow:0 0 35px #5d5bff66;
-  font-size:21px
-}
-
-.pill{
-  border:1px solid #303653;
-  background:#12172a;
-  color:#b8bee0;
-  padding:10px 14px;
-  border-radius:999px;
-  font-size:12px
-}
-
-.hero{
-  text-align:center;
-  margin-bottom:26px
-}
-
-.eyebrow{
-  color:#7faaff;
-  font-weight:800;
-  font-size:12px;
-  letter-spacing:2px
-}
-
-.hero h1{
-  font-size:clamp(38px,8vw,72px);
-  line-height:.98;
-  margin:12px 0;
-  background:linear-gradient(90deg,#fff,#9fc8ff 45%,#8b6cff);
-  -webkit-background-clip:text;
-  color:transparent;
-  letter-spacing:-3px
-}
-
-.hero p{
-  color:var(--muted);
-  margin:0 auto;
-  max-width:620px
-}
-
-.card{
-  max-width:800px;
-  margin:28px auto 0;
-  padding:18px;
-  border:1px solid #2a3150;
-  border-radius:25px;
-  background:linear-gradient(180deg,#11162aee,#0c1020ee);
-  box-shadow:0 30px 90px #0008
-}
-
-.tabs{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:8px;
-  padding:6px;
-  background:#090d19;
-  border:1px solid #222943;
-  border-radius:18px
-}
-
-.tab{
-  border:0;
-  background:transparent;
-  color:#8189a7;
-  padding:14px;
-  border-radius:13px;
-  font-size:15px;
-  font-weight:800
-}
-
-.tab.active{
-  color:white;
-  background:linear-gradient(135deg,#6652ef,#8756ff);
-  box-shadow:0 8px 25px #7357ff44
-}
-
-.inputrow{
-  display:flex;
-  gap:10px;
-  margin-top:16px
-}
-
-.input{
-  flex:1;
-  min-width:0;
-  background:#090d18;
-  border:1px solid #2a3150;
-  color:#fff;
-  border-radius:15px;
-  padding:17px;
-  font-size:15px;
-  outline:none
-}
-
-.input:focus{
-  border-color:#7665ff;
-  box-shadow:0 0 0 4px #7357ff18
-}
-
-.convert{
-  border:0;
-  border-radius:15px;
-  padding:0 25px;
-  background:linear-gradient(135deg,#6d54ff,#9b54ff);
-  color:#fff;
-  font-weight:900;
-  font-size:15px;
-  min-width:135px;
-  box-shadow:0 10px 35px #7357ff35
-}
-
-.convert:disabled{opacity:.55}
-
-.opts{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  margin-top:14px
-}
-
-.select{
-  background:#0a0f1c;
-  color:#dce0f2;
-  border:1px solid #29314d;
-  border-radius:12px;
-  padding:11px 14px
-}
-
-.status{
-  display:none;
-  margin-top:14px;
-  padding:13px 15px;
-  border-radius:13px;
-  font-size:13px;
-  border:1px solid #29314d;
-  background:#0a0f1b;
-  color:#b9c1df
-}
-
-.status.show{display:block}
-
-.status.error{
-  border-color:#6e2940;
-  background:#24101a;
-  color:#ff9eb0
-}
-
-.status.ok{
-  border-color:#285c55;
-  background:#0c211e;
-  color:#9ef0d5
-}
-
-.result{
-  display:none;
-  margin-top:14px;
-  padding:15px;
-  border:1px solid #29314d;
-  border-radius:15px;
-  background:#0a0f1b
-}
-
-.result.show{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:center
-}
-
-.download{
-  color:#fff;
-  text-decoration:none;
-  background:#1b8e78;
-  padding:11px 16px;
-  border-radius:11px;
-  font-weight:800
-}
-
-.features{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:12px;
-  margin-top:18px
-}
-
-.feature{
-  padding:18px;
-  border:1px solid #202740;
-  background:#0d1220aa;
-  border-radius:17px
-}
-
-.feature b{
-  display:block;
-  margin-bottom:7px
-}
-
-.feature span{
-  font-size:12px;
-  color:#858da9
-}
-
-.footer{
-  text-align:center;
-  color:#606987;
-  font-size:12px;
-  margin-top:35px
-}
-
-@media(max-width:650px){
-  .inputrow{display:block}
-
-  .convert{
-    width:100%;
-    height:52px;
-    margin-top:10px
-  }
-
-  .features{
-    grid-template-columns:1fr
-  }
-
-  .hero h1{
-    letter-spacing:-2px
-  }
-
-  .wrap{
-    padding-top:17px
-  }
-}
+  body { background:#0a0a0f; }
+  .blob { position:fixed; border-radius:9999px; filter:blur(120px); pointer-events:none; }
 </style>
 </head>
+<body class="text-white min-h-screen overflow-x-hidden">
 
-<body>
+<div class="blob" style="top:-200px;left:-200px;width:500px;height:500px;background:rgba(147,51,234,.25)"></div>
+<div class="blob" style="bottom:-200px;right:-200px;width:500px;height:500px;background:rgba(236,72,153,.2)"></div>
 
-<div class="wrap">
+<main class="relative z-10 max-w-3xl mx-auto px-5 py-16">
 
-<header class="nav">
+  <div class="text-center mb-12">
+    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-purple-300 mb-6">
+      <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+      Fast • Free • No Ads
+    </div>
+    <h1 class="text-5xl md:text-6xl font-bold mb-3 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+      YT Downloader
+    </h1>
+    <p class="text-slate-400">YouTube video ko MP3 ya MP4 me download karo.</p>
+  </div>
 
-<div class="brand">
-<div class="logo">▶</div>
-YTMP3<span style="color:#6f8cff">X</span>
-</div>
+  <div class="flex gap-2 p-2 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-xl">
+    <input id="url" placeholder="YouTube link paste karo..."
+      class="flex-1 bg-transparent px-4 py-3 outline-none text-sm placeholder:text-slate-500" />
+    <button id="fetchBtn"
+      class="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold text-sm hover:opacity-90 disabled:opacity-40">
+      Fetch
+    </button>
+  </div>
 
-<div class="pill">
-FAST • SIMPLE • CLEAN
-</div>
+  <div id="error" class="hidden mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm"></div>
 
-</header>
+  <div id="result" class="hidden mt-8 bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-xl">
+    <div class="flex gap-4">
+      <img id="thumb" class="w-40 h-24 object-cover rounded-lg" />
+      <div class="min-w-0 flex-1">
+        <h2 id="title" class="font-semibold line-clamp-2"></h2>
+        <p id="author" class="text-xs text-slate-400 mt-1"></p>
+        <p id="duration" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+    </div>
 
-<section class="hero">
+    <h3 class="mt-6 mb-3 text-sm font-semibold text-slate-300">🎵 Audio</h3>
+    <button onclick="dl('audio')"
+      class="w-full p-4 rounded-xl bg-gradient-to-r from-green-500/20 to-emerald-500/10 border border-green-500/30 hover:border-green-400 transition text-left">
+      <div class="font-semibold text-green-300">Download Audio (M4A)</div>
+      <div class="text-xs text-slate-400 mt-0.5">Best quality available</div>
+    </button>
 
-<div class="eyebrow">
-NEXT-GEN MEDIA CONVERTER
-</div>
+    <h3 class="mt-6 mb-3 text-sm font-semibold text-slate-300">🎬 Video</h3>
+    <div id="videos" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+  </div>
 
-<h1>
-Convert. Download.<br>
-Done.
-</h1>
-
-<p>
-Paste a YouTube link and choose MP3 audio or MP4 video.
-Built with a clean, mobile-first interface.
-</p>
-
-</section>
-
-<main class="card">
-
-<div class="tabs">
-
-<button class="tab active" data-type="mp3">
-🎵 MP3 — Audio
-</button>
-
-<button class="tab" data-type="mp4">
-🎬 MP4 — Video
-</button>
-
-</div>
-
-<div class="inputrow">
-
-<input
-id="url"
-class="input"
-placeholder="Paste YouTube link here…"
-autocomplete="off"
->
-
-<button id="convert" class="convert">
-Convert
-</button>
-
-</div>
-
-<div class="opts">
-
-<label style="color:#8f97b2;font-size:13px">
-Quality
-</label>
-
-<select id="quality" class="select"></select>
-
-</div>
-
-<div id="status" class="status"></div>
-
-<div id="result" class="result">
-
-<div>
-
-<b id="resultTitle">
-Ready
-</b>
-
-<div style="color:#8189a7;font-size:12px;margin-top:4px">
-Your file is ready.
-</div>
-
-</div>
-
-<a id="download" class="download" href="#">
-Download
-</a>
-
-</div>
-
+  <p class="text-center text-xs text-slate-600 mt-12">Powered by yt-dlp • Vercel</p>
 </main>
 
-<section class="features">
-
-<div class="feature">
-<b>⚡ Fast interface</b>
-<span>
-Responsive UI designed for phone and desktop.
-</span>
-</div>
-
-<div class="feature">
-<b>🔒 No account</b>
-<span>
-No login screen or unnecessary steps.
-</span>
-</div>
-
-<div class="feature">
-<b>🎚️ Quality control</b>
-<span>
-Choose the quality supported by the backend.
-</span>
-</div>
-
-</section>
-
-<div class="footer">
-YTMP3 X • Use only with content you are allowed to download.
-</div>
-
-</div>
-
 <script>
+const $ = (id) => document.getElementById(id);
+let currentUrl = '';
 
-const state={
-type:'mp3'
+$('fetchBtn').onclick = async () => {
+  const url = $('url').value.trim();
+  if (!url) return;
+  $('error').classList.add('hidden');
+  $('result').classList.add('hidden');
+  $('fetchBtn').textContent = 'Loading...';
+  $('fetchBtn').disabled = true;
+
+  try {
+    const r = await fetch('/api/info?url=' + encodeURIComponent(url));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed');
+    currentUrl = url;
+    render(d);
+  } catch (e) {
+    $('error').textContent = '⚠️ ' + e.message;
+    $('error').classList.remove('hidden');
+  } finally {
+    $('fetchBtn').textContent = 'Fetch';
+    $('fetchBtn').disabled = false;
+  }
 };
 
-const $=id=>document.getElementById(id);
+function render(d) {
+  $('thumb').src = d.thumbnail;
+  $('title').textContent = d.title;
+  $('author').textContent = d.author;
+  const s = d.duration;
+  $('duration').textContent = '⏱ ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
 
-const tabs=document.querySelectorAll('.tab');
+  const box = $('videos');
+  box.innerHTML = '';
+  if (!d.formats.length) {
+    box.innerHTML = '<p class="text-xs text-slate-500 col-span-full">Koi combined format nahi mila.</p>';
+  }
+  d.formats.forEach(f => {
+    const size = f.size ? (f.size/1024/1024).toFixed(1) + ' MB' : '';
+    const b = document.createElement('button');
+    b.className = 'p-3 rounded-xl bg-white/5 border border-white/10 hover:border-purple-400/60 transition text-left text-sm';
+    b.innerHTML = `<div class="font-semibold text-purple-300">${f.quality}</div>
+                   <div class="text-[10px] text-slate-500">${f.ext.toUpperCase()} ${size}</div>`;
+    b.onclick = () => dl('video', f.format_id);
+    box.appendChild(b);
+  });
 
-function setQuality(){
-
-const q=$('quality');
-
-q.innerHTML='';
-
-const arr=
-state.type==='mp3'
-?
-[
-['128','128 kbps'],
-['192','192 kbps'],
-['256','256 kbps'],
-['320','320 kbps']
-]
-:
-[
-['best','Highest available'],
-['2160','2160p'],
-['1440','1440p'],
-['1080','1080p'],
-['720','720p'],
-['480','480p'],
-['360','360p']
-];
-
-arr.forEach(([v,t])=>{
-
-const o=document.createElement('option');
-
-o.value=v;
-o.textContent=t;
-
-q.appendChild(o);
-
-});
-
+  $('result').classList.remove('hidden');
 }
 
-function status(msg,kind=''){
-
-const s=$('status');
-
-s.textContent=msg;
-
-s.className='status show '+kind;
-
+function dl(type, fmt) {
+  if (!currentUrl) return;
+  let u = '/api/download?url=' + encodeURIComponent(currentUrl) + '&type=' + type;
+  if (fmt) u += '&format_id=' + fmt;
+  const a = document.createElement('a');
+  a.href = u;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
-
-tabs.forEach(t=>{
-
-t.onclick=()=>{
-
-tabs.forEach(x=>
-x.classList.remove('active')
-);
-
-t.classList.add('active');
-
-state.type=t.dataset.type;
-
-setQuality();
-
-$('result').classList.remove('show');
-
-$('status').className='status';
-
-};
-
-});
-
-setQuality();
-
-$('convert').onclick=async()=>{
-
-const url=$('url').value.trim();
-
-if(!url){
-
-status(
-'Paste a YouTube URL first.',
-'error'
-);
-
-return;
-
-}
-
-const btn=$('convert');
-
-btn.disabled=true;
-btn.textContent='Working…';
-
-$('result').classList.remove('show');
-
-status(
-'Connecting to converter…'
-);
-
-try{
-
-const endpoint=
-`/api/${state.type}?url=${
-encodeURIComponent(url)
-}&quality=${
-encodeURIComponent($('quality').value)
-}`;
-
-const r=await fetch(
-endpoint,
-{
-headers:{
-Accept:'application/json'
-}
-}
-);
-
-const ct=
-r.headers.get('content-type')||'';
-
-if(!r.ok){
-
-const raw=await r.text();
-
-throw new Error(
-raw.slice(0,220)
-||
-`Request failed (${r.status})`
-);
-
-}
-
-if(ct.includes('application/json')){
-
-const d=await r.json();
-
-if(!d.ok)
-throw new Error(
-d.error||'Conversion failed'
-);
-
-$('resultTitle').textContent=
-d.title||'File ready';
-
-$('download').href=
-d.download_url||'#';
-
-$('result').classList.add('show');
-
-status(
-'Conversion complete.',
-'ok'
-);
-
-}else{
-
-const blob=await r.blob();
-
-const u=
-URL.createObjectURL(blob);
-
-$('resultTitle').textContent=
-'File ready';
-
-$('download').href=u;
-
-$('download').download=
-state.type==='mp3'
-?
-'audio.mp3'
-:
-'video.mp4';
-
-$('result').classList.add('show');
-
-status(
-'Conversion complete.',
-'ok'
-);
-
-}
-
-}catch(e){
-
-status(
-'Error: '+e.message,
-'error'
-);
-
-}finally{
-
-btn.disabled=false;
-btn.textContent='Convert';
-
-}
-
-};
-
-$('url').addEventListener(
-'keydown',
-e=>{
-if(e.key==='Enter')
-$('convert').click();
-}
-);
-
 </script>
-
 </body>
 </html>
